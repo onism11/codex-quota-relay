@@ -5,18 +5,23 @@ description: Install, verify, or remove Codex Quota Relay, a project-local Stop 
 
 # Codex Quota Relay
 
-Install from the target repository root:
+Use the unified control command from the package root:
 
 ```powershell
-& <skill-path>\scripts\install.ps1 -ProjectRoot .
+& <skill-path>\relay.ps1 install -ProjectRoot .
+& <skill-path>\relay.ps1 status -ProjectRoot .
+& <skill-path>\relay.ps1 stop -ProjectRoot .
+& <skill-path>\relay.ps1 test
 ```
 
-The installer copies the runtime hook into `.codex/hooks/` and adds one marked `Stop` command to `.codex/hooks.json` without replacing existing hooks. The runtime writes `.codex/runtime/quota-resume-request.json`; when quota is low, use its `resume_at_local` and `automation_prompt` with `codex_app__automation_update`, then record `status: scheduled` and the automation id.
+Installation is also activation: there is no daemon to start. Codex invokes the hook automatically on the project `Stop` event. The installer copies the runtime hook into `.codex/hooks/` and adds one marked `Stop` command to `.codex/hooks.json` without replacing existing hooks.
+
+The runtime writes `.codex/runtime/quota-resume-request.json`; when quota is low, use its `resume_at_local` and `automation_prompt` with `codex_app__automation_update`, then record `status: scheduled` and the automation id. `stop` removes the project hook, but an already scheduled heartbeat is external to the project: delete that automation separately through Codex.
 
 Remove only this package's entry and unchanged installed files:
 
 ```powershell
-& <skill-path>\scripts\uninstall.ps1 -ProjectRoot .
+& <skill-path>\relay.ps1 stop -ProjectRoot .
 ```
 
 Run `scripts/test-package.ps1` after changing any bundled script.

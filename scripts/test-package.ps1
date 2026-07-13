@@ -5,7 +5,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $Install = Join-Path $PSScriptRoot "install.ps1"
-$Uninstall = Join-Path $PSScriptRoot "uninstall.ps1"
+$Relay = Join-Path (Split-Path -Parent $PSScriptRoot) "relay.ps1"
 $FixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("quota-resume-hook-test-" + [guid]::NewGuid().ToString("n"))
 $Project = Join-Path $FixtureRoot "sample-project"
 
@@ -66,6 +66,10 @@ try {
     Assert-True ($packageCommand.Contains($installedHook)) "Installed command does not target the project-local hook."
     Assert-True (-not $packageCommand.Contains("蒸馏大王")) "Installed command contains a source-project path."
 
+    $relayStatus = & $Relay status -ProjectRoot $Project -Json | ConvertFrom-Json
+    Assert-True ([bool]$relayStatus.hook_enabled) "Relay status did not report the installed hook as enabled."
+    Assert-True ([bool]$relayStatus.runtime_hook_present) "Relay status did not find the installed runtime script."
+
     $transcriptPath = Join-Path $FixtureRoot "transcript.jsonl"
     $rateEvent = [ordered]@{
         type = "event_msg"
@@ -110,7 +114,9 @@ try {
     Assert-True ([string]$fallback.schedule_basis -eq "fallback-now-plus-5h") "Installed runtime did not use the 5h fallback."
     Assert-True ([DateTimeOffset]::Parse($fallback.resume_at_utc).ToString("o") -eq "2026-07-12T05:00:00.0000000+00:00") "Installed runtime produced the wrong fallback time."
 
-    & $Uninstall -ProjectRoot $Project | Out-Null
+    $stopped = & $Relay stop -ProjectRoot $Project -Json | ConvertFrom-Json
+    Assert-True (-not [bool]$stopped.hook_enabled) "Relay stop did not report the hook as disabled."
+    Assert-True (-not [bool]$stopped.runtime_hook_present) "Relay stop did not remove the unchanged runtime script."
     $uninstalledConfig = Get-Content -LiteralPath $hooksPath -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ([int]$uninstalledConfig.version -eq 7) "Uninstaller changed an unrelated top-level property."
     Assert-True (@($uninstalledConfig.hooks.PreToolUse).Count -eq 1) "Uninstaller changed an unrelated hook event."
