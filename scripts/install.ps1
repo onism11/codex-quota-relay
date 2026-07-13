@@ -1,12 +1,14 @@
 [CmdletBinding()]
 param(
-    [string]$ProjectRoot = "."
+    [string]$ProjectRoot = ".",
+    [ValidateSet("project", "global")]
+    [string]$Scope = "project"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-$Marker = "[quota-resume-hook:v1] Checking quota resume threshold"
+$Marker = "[quota-resume-hook:v2] Checking quota resume threshold"
 
 function Get-Prop {
     param([object]$Object, [string]$Name)
@@ -37,7 +39,7 @@ if (-not (Test-Path -LiteralPath $root -PathType Container)) {
     throw "Project root does not exist: $root"
 }
 
-$codexDirectory = Join-Path $root ".codex"
+$codexDirectory = if ($Scope -eq "global") { $root } else { Join-Path $root ".codex" }
 $hookDirectory = Join-Path $codexDirectory "hooks"
 $hooksPath = Join-Path $codexDirectory "hooks.json"
 $sourceScript = Join-Path $PSScriptRoot "quota-resume-hook.ps1"
@@ -66,7 +68,7 @@ if ($null -eq $hooks) {
     throw "Existing hooks property must be a JSON object: $hooksPath"
 }
 
-$command = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $targetScript + '" -HookMode'
+$command = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $targetScript + '" -HookMode -InstallScope "' + $Scope + '" -ConfiguredRoot "' + $root + '"'
 $keptStopEntries = New-Object System.Collections.Generic.List[object]
 $existingStop = Get-Prop -Object $hooks -Name "Stop"
 
@@ -83,7 +85,7 @@ foreach ($entry in @($existingStop)) {
         $status = [string](Get-Prop -Object $inner -Name "statusMessage")
         $innerCommand = [string](Get-Prop -Object $inner -Name "commandWindows")
         if (-not $innerCommand) { $innerCommand = [string](Get-Prop -Object $inner -Name "command") }
-        $isThisPackage = ($status -eq $Marker -and $innerCommand -eq $command)
+        $isThisPackage = ($status -like "[[]quota-resume-hook:v*] Checking quota resume threshold")
         if (-not $isThisPackage) { $keptInner.Add($inner) }
     }
 
@@ -114,6 +116,7 @@ Write-JsonUtf8 -Path $hooksPath -Value $config
 $installedHash = (Get-FileHash -LiteralPath $targetScript -Algorithm SHA256).Hash.ToLowerInvariant()
 $metadata = [ordered]@{
     schema_version = 1
+    scope = $Scope
     marker = $Marker
     hook_path = $targetScript
     hook_sha256 = $installedHash

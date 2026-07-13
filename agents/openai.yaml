@@ -1,4 +1,4 @@
 interface:
   display_name: "Codex Quota Relay"
   short_description: "Relay long tasks safely across quota resets"
-  default_prompt: "Use $quota-resume-hook to install, verify, or remove Codex Quota Relay for this project."
+  default_prompt: "Use $quota-resume-hook to 开启自动档, 关闭自动档, show status or logs, or completely uninstall Relay."

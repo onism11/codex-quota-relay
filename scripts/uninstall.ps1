@@ -1,12 +1,14 @@
 [CmdletBinding()]
 param(
-    [string]$ProjectRoot = "."
+    [string]$ProjectRoot = ".",
+    [ValidateSet("project", "global")]
+    [string]$Scope = "project",
+    [switch]$PurgeData
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-$Marker = "[quota-resume-hook:v1] Checking quota resume threshold"
 
 function Get-Prop {
     param([object]$Object, [string]$Name)
@@ -37,11 +39,11 @@ if (-not (Test-Path -LiteralPath $root -PathType Container)) {
     throw "Project root does not exist: $root"
 }
 
-$hookDirectory = Join-Path $root ".codex\hooks"
-$hooksPath = Join-Path $root ".codex\hooks.json"
+$codexDirectory = if ($Scope -eq "global") { $root } else { Join-Path $root ".codex" }
+$hookDirectory = Join-Path $codexDirectory "hooks"
+$hooksPath = Join-Path $codexDirectory "hooks.json"
 $targetScript = Join-Path $hookDirectory "quota-resume-hook.ps1"
 $metadataPath = Join-Path $hookDirectory "quota-resume-hook.install.json"
-$command = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $targetScript + '" -HookMode'
 $installedHash = ""
 
 if (Test-Path -LiteralPath $metadataPath -PathType Leaf) {
@@ -79,7 +81,7 @@ if (Test-Path -LiteralPath $hooksPath -PathType Leaf) {
                 $status = [string](Get-Prop -Object $inner -Name "statusMessage")
                 $innerCommand = [string](Get-Prop -Object $inner -Name "commandWindows")
                 if (-not $innerCommand) { $innerCommand = [string](Get-Prop -Object $inner -Name "command") }
-                $isThisPackage = ($status -eq $Marker -and $innerCommand -eq $command)
+                $isThisPackage = ($status -like "[[]quota-resume-hook:v*] Checking quota resume threshold")
                 if (-not $isThisPackage) { $keptInner.Add($inner) }
             }
 
@@ -111,6 +113,17 @@ if (Test-Path -LiteralPath $targetScript -PathType Leaf) {
 
 if (Test-Path -LiteralPath $metadataPath -PathType Leaf) {
     Remove-Item -LiteralPath $metadataPath -Force
+}
+
+if ($PurgeData) {
+    $statePath = Join-Path $codexDirectory "quota-relay.json"
+    $runtimePath = Join-Path $codexDirectory "runtime\quota-relay"
+    if (Test-Path -LiteralPath $statePath -PathType Leaf) {
+        Remove-Item -LiteralPath $statePath -Force
+    }
+    if (Test-Path -LiteralPath $runtimePath -PathType Container) {
+        Remove-Item -LiteralPath $runtimePath -Recurse -Force
+    }
 }
 
 Write-Output "Removed quota resume hook entry from $root (script removed: $scriptRemoved)"
