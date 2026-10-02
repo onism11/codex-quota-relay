@@ -120,6 +120,7 @@ Task and Session modes should be controlled through the Skill because their stat
 - Preserves existing Stop Hooks and unrelated Hook events.
 - Repeated installation stays idempotent.
 - Keeps requests isolated by thread id.
+- Preserves a scheduled request and its heartbeat automation id when the same quota window triggers again.
 - Waits for the later reset when both quota windows are low.
 - Leaves user-modified installed scripts untouched during uninstall.
 - Does not store credentials or copy full transcripts into recovery requests.
@@ -134,4 +135,4 @@ Run the isolated lifecycle suite after any script change:
 & .\relay.ps1 test
 ```
 
-The suite covers install preservation, repeated install, threshold boundaries, dual quota windows, fallback timing, Task scope, Session override precedence, user/global installation, local logging, thread isolation, and safe uninstall.
+The suite covers install preservation, repeated install, threshold boundaries, dual quota windows, fallback timing, Task scope, Session override precedence, user/global installation, local logging, thread isolation, scheduled-request preservation, new reset windows, and safe uninstall. GitHub Actions runs it on Windows for pushes and pull requests without a live Codex installation or network preflight.

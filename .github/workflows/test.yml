@@ -1,0 +1,18 @@
+name: Windows lifecycle tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run isolated lifecycle suite
+        shell: powershell
+        run: .\scripts\test-package.ps1

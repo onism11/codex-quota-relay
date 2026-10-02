@@ -337,6 +337,15 @@ try {
         } catch {}
     }
 
+    if ($existingScheduled) {
+        # Codex records automation_id after scheduling. Keep the original request
+        # intact so repeat Stop events cannot lose the heartbeat needed for purge.
+        if (-not $HookMode) { $existing | ConvertTo-Json -Depth 12; exit 0 }
+        Write-EventLog -Path $logPath -Value (Merge-Event -Base $eventBase -Extra ([ordered]@{ effective_scope = $effectiveScope; outcome = "already-scheduled"; failure = $false; request_path = $RequestPath }))
+        [Console]::Out.WriteLine('{"continue":true,"systemMessage":"Quota resume is already scheduled for this reset window."}')
+        exit 0
+    }
+
     $activeRunPath = Join-Path $projectRoot ".codex\runtime\active-run.json"
     $runDirectory = ""
     $resumePrompt = ""
@@ -357,7 +366,7 @@ try {
 
     $request = [ordered]@{
         schema_version = 2
-        status = if ($existingScheduled) { "scheduled" } else { "pending" }
+        status = "pending"
         created_at_utc = $now.ToString("o")
         effective_scope = $effectiveScope
         task_input = [string]$context.task_input
@@ -375,12 +384,6 @@ try {
     Write-JsonUtf8 -Path $RequestPath -Value $request
 
     if (-not $HookMode) { $request | ConvertTo-Json -Depth 12; exit 0 }
-    if ($existingScheduled) {
-        Write-EventLog -Path $logPath -Value (Merge-Event -Base $eventBase -Extra ([ordered]@{ effective_scope = $effectiveScope; outcome = "already-scheduled"; failure = $false; request_path = $RequestPath }))
-        [Console]::Out.WriteLine('{"continue":true,"systemMessage":"Quota resume is already scheduled for this reset window."}')
-        exit 0
-    }
-
     Write-EventLog -Path $logPath -Value (Merge-Event -Base $eventBase -Extra ([ordered]@{ effective_scope = $effectiveScope; outcome = "recovery-requested"; failure = $false; request_path = $RequestPath; schedule_basis = $scheduleBasis; resume_at_local = $resumeAt.ToLocalTime().ToString("o") }))
     $reason = @(
         "QUOTA_RESUME_REQUIRED",
