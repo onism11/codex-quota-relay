@@ -139,6 +139,33 @@ try {
     Assert-True ([string]$logEvent.outcome -eq "recovery-requested") "Local log did not record the Relay call."
     Assert-True ([string]$logEvent.task_input -eq "Build the release artifact.") "Local log did not record the task input."
 
+    # Simulate Codex recording the heartbeat after the first recovery request.
+    # A repeated Stop must retain its id and original timing for safe cleanup.
+    $taskRequest.status = "scheduled"
+    $taskRequest | Add-Member -NotePropertyName automation_id -NotePropertyValue "fixture-heartbeat-id"
+    $scheduledJson = ($taskRequest | ConvertTo-Json -Depth 12) + "`n"
+    [System.IO.File]::WriteAllText($threadRequest, $scheduledJson, $Utf8NoBom)
+    $repeatResult = $hookPayload | powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installedHook -HookMode -InstallScope project -ConfiguredRoot $Project -NowUtc "2026-07-12T00:10:00Z" | ConvertFrom-Json
+    Assert-True ([bool](Get-Prop -Object $repeatResult -Name "continue")) "An already-scheduled reset must not block again."
+    Assert-True ([System.IO.File]::ReadAllText($threadRequest) -ceq $scheduledJson) "A repeated Stop overwrote the scheduled request or its automation id."
+    $repeatLog = Get-Content -LiteralPath $projectLog -Encoding UTF8 | Select-Object -Last 1 | ConvertFrom-Json
+    Assert-True ([string]$repeatLog.outcome -eq "already-scheduled") "A repeated Stop was not logged as already scheduled."
+
+    $repeatDirect = & $installedHook -TranscriptPath $scopedTranscript -RequestPath $threadRequest -NowUtc "2026-07-12T00:10:00Z" | ConvertFrom-Json
+    Assert-True ([string]$repeatDirect.automation_id -eq "fixture-heartbeat-id") "Direct invocation lost the scheduled automation id."
+    Assert-True ([System.IO.File]::ReadAllText($threadRequest) -ceq $scheduledJson) "Direct invocation rewrote the scheduled request."
+
+    # A later quota window must still produce a fresh, unscheduled request.
+    $rateEvent.payload.rate_limits.primary.resets_at = 1783818000
+    $nextWindowLines = ($taskEvents | ForEach-Object { $_ | ConvertTo-Json -Compress -Depth 12 }) -join "`n"
+    [System.IO.File]::WriteAllText($scopedTranscript, ($nextWindowLines + "`n"), $Utf8NoBom)
+    $nextWindowResult = $hookPayload | powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installedHook -HookMode -InstallScope project -ConfiguredRoot $Project -NowUtc "2026-07-12T00:10:00Z" | ConvertFrom-Json
+    Assert-True ([string](Get-Prop -Object $nextWindowResult -Name "decision") -eq "block") "A new reset window did not request a fresh recovery."
+    $nextWindowRequest = Get-Content -LiteralPath $threadRequest -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ([string]$nextWindowRequest.status -eq "pending") "A new reset window reused scheduled state."
+    Assert-True ($null -eq (Get-Prop -Object $nextWindowRequest -Name "automation_id")) "A new reset window inherited the old heartbeat id."
+    Assert-True ([string]$nextWindowRequest.reset_key -ne [string]$taskRequest.reset_key) "A new reset window reused the old reset key."
+
     & $Relay enable -Scope project -ProjectRoot $Project -CodexHome $TestCodexHome -SkipNetworkPreflight -Json | Out-Null
     $sessionStatus = & $Relay disable -Scope session -ProjectRoot $Project -CodexHome $TestCodexHome -Json | ConvertFrom-Json
     Assert-True ([string]$sessionStatus.conversation_marker -eq "<!-- codex-quota-relay:auto:session:off:v2 -->") "Session mode did not return its off marker."
